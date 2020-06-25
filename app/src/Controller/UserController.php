@@ -9,11 +9,9 @@ use App\Entity\User;
 use App\Form\ChangePasswordType;
 
 use App\Form\UserType;
-use App\Repository\TagRepository;
-use App\Repository\UserRepository;
+use App\Service\UserService;
 use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\ORMException;
-use Knp\Component\Pager\PaginatorInterface;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -29,9 +27,24 @@ use Symfony\Component\Security\Core\Encoder\UserPasswordEncoderInterface;
 class UserController extends AbstractController
 {
     /**
-     * @param Request            $request
-     * @param UserRepository     $userRepository
-     * @param PaginatorInterface $paginator
+     * @var UserService
+     */
+    private $userService;
+
+    /**
+     * UserController constructor.
+     *
+     * @param UserService $userService
+     */
+    public function __construct(UserService $userService)
+    {
+        $this->userService = $userService;
+    }
+
+    /**
+     * Index of galleries.
+     *
+     * @param Request $request
      *
      * @return Response
      *
@@ -42,13 +55,10 @@ class UserController extends AbstractController
      * )
      * @IsGranted("ROLE_ADMIN")
      */
-    public function index(Request $request, UserRepository $userRepository, PaginatorInterface $paginator): Response
+    public function index(Request $request): Response
     {
-        $pagination = $paginator->paginate(
-            $userRepository->queryAll(),
-            $request->query->getInt('page', 1),
-            UserRepository::PAGINATOR_ITEMS_PER_PAGE
-        );
+        $page = $request->query->getInt('page', 1);
+        $pagination = $this->userService->createPaginatedList($page);
 
         return $this->render(
             'project/users/index.html.twig',
@@ -56,12 +66,10 @@ class UserController extends AbstractController
         );
     }
 
-
     /**
      * Show user.
      *
-     * @param UserRepository $userRepository
-     * @param User           $user
+     * @param User $user
      *
      * @return Response
      *
@@ -71,9 +79,12 @@ class UserController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="my_account"
      * )
-     * @IsGranted("ROLE_USER")
+     * @IsGranted(
+     *     "VIEW",
+     *     subject="user",
+     * )
      */
-    public function show(UserRepository $userRepository, User $user): Response
+    public function show(User $user): Response
     {
         return $this->render(
             'project/users/myAccount.html.twig',
@@ -84,9 +95,8 @@ class UserController extends AbstractController
     /**
      * Edit email.
      *
-     * @param Request        $request
-     * @param User           $user
-     * @param UserRepository $userRepository
+     * @param Request $request
+     * @param User    $user
      *
      * @return Response
      *
@@ -99,17 +109,23 @@ class UserController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="edit_email",
      * )
+     *
+     * @IsGranted(
+     *     "EDIT_EMAIL",
+     *     subject="user",
+     * )
      */
-    public function editEmail(Request $request, User $user, UserRepository $userRepository):Response
+    public function editEmail(Request $request, User $user):Response
     {
         $form = $this->createForm(UserType::class, $user, ['method' => 'PUT']);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $userRepository->save($user);
+            $this->userService->save($user);
 
             $id = $user->getId();
 
+            $this->addFlash('success', 'email_updated');
             if ($this->isGranted('ROLE_ADMIN')) {
                 $redirect = $this->redirectToRoute('users_index');
             } else {
@@ -133,7 +149,6 @@ class UserController extends AbstractController
      *
      * @param Request                      $request
      * @param User                         $user
-     * @param UserRepository               $userRepository
      * @param UserPasswordEncoderInterface $passwordEncoder
      *
      * @return Response
@@ -147,8 +162,13 @@ class UserController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="edit_password",
      * )
+     *
+     * @IsGranted(
+     *     "EDIT_PASS",
+     *     subject="user",
+     * )
      */
-    public function editPassword(Request $request, User $user, UserRepository $userRepository, UserPasswordEncoderInterface $passwordEncoder): Response
+    public function editPassword(Request $request, User $user, UserPasswordEncoderInterface $passwordEncoder): Response
     {
         $form = $this->createForm(ChangePasswordType::class, $user, ['method' => 'PUT']);
         $form->handleRequest($request);
@@ -160,10 +180,10 @@ class UserController extends AbstractController
                     $form->get('password')->getData()
                 )
             );
+            $this->userService->save($user);
 
-            $userRepository->save($user);
             $id = $user->getId();
-            $this->addFlash('success', 'message_account_updated_successfully');
+            $this->addFlash('success', 'password_updated');
 
             if ($this->isGranted('ROLE_ADMIN')) {
                 $redirect = $this->redirectToRoute('users_index');

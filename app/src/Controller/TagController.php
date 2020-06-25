@@ -7,10 +7,10 @@ namespace App\Controller;
 
 use App\Entity\Tag;
 use App\Form\TagType;
-use App\Repository\TagRepository;
+use App\Service\TagService;
 use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\ORMException;
-use Knp\Component\Pager\PaginatorInterface;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\HttpFoundation\Request;
@@ -25,11 +25,26 @@ use Symfony\Component\Routing\Annotation\Route;
 class TagController extends AbstractController
 {
     /**
+     * Tag service.
+     *
+     * @var TagService
+     */
+    private $tagService;
+
+    /**
+     * CategoryController constructor.
+     *
+     * @param TagService $tagService
+     */
+    public function __construct(TagService $tagService)
+    {
+        $this->tagService = $tagService;
+    }
+
+    /**
      * Index tags.
      *
-     * @param Request            $request
-     * @param TagRepository      $tagRepository
-     * @param PaginatorInterface $paginator
+     * @param Request $request
      *
      * @return Response
      *
@@ -38,14 +53,14 @@ class TagController extends AbstractController
      *     methods={"GET"},
      *     name="tags_index",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function index(Request $request, TagRepository $tagRepository, PaginatorInterface $paginator): Response
+    public function index(Request $request): Response
     {
-        $pagination = $paginator->paginate(
-            $tagRepository->queryAll(),
-            $request->query->getInt('page', 1),
-            TagRepository::PAGINATOR_ITEMS_PER_PAGE
-        );
+
+        $page = $request->query->getInt('page', 1);
+        $pagination = $this->tagService->createPaginatedList($page);
 
         return $this->render(
             'project/tags/index.html.twig',
@@ -57,8 +72,7 @@ class TagController extends AbstractController
     /**
      * Create tag.
      *
-     * @param Request       $request
-     * @param TagRepository $tagRepository
+     * @param Request $request
      *
      * @return Response
      *
@@ -70,15 +84,17 @@ class TagController extends AbstractController
      *     methods={"GET", "POST"},
      *     name="tag_create",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function create(Request $request, TagRepository $tagRepository): Response
+    public function create(Request $request): Response
     {
         $tag = new Tag();
         $form = $this->createForm(TagType::class, $tag);
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
-            $tagRepository->save($tag);
-            $this->addFlash('success', 'Yeeeep! You have added a new tag!');
+            $this->tagService->save($tag);
+            $this->addFlash('success', 'new_tag_added');
 
             return $this->redirectToRoute('tags_index');
         }
@@ -90,9 +106,8 @@ class TagController extends AbstractController
     }
 
     /**
-     * @param Request       $request
-     * @param Tag           $tag
-     * @param TagRepository $tagRepository
+     * @param Request $request
+     * @param Tag     $tag
      *
      * @return Response
      *
@@ -105,16 +120,18 @@ class TagController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="tag_edit",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function edit(Request $request, Tag $tag, TagRepository $tagRepository): Response
+    public function edit(Request $request, Tag $tag): Response
     {
         $form = $this->createForm(TagType::class, $tag, ['method' => 'PUT']);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $tagRepository->save($tag);
+            $this->tagService->save($tag);
 
-            $this->addFlash('info', 'Wow you did a great edit!');
+            $this->addFlash('info', 'edit_completed');
 
             return $this->redirectToRoute('tags_index');
         }
@@ -131,9 +148,8 @@ class TagController extends AbstractController
     /**
      * Tag delete.
      *
-     * @param Request       $request
-     * @param Tag           $tag
-     * @param TagRepository $tagRepository
+     * @param Request $request
+     * @param Tag     $tag
      *
      * @return Response
      *
@@ -146,8 +162,10 @@ class TagController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="tag_delete",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function delete(Request $request, Tag $tag, TagRepository $tagRepository): Response
+    public function delete(Request $request, Tag $tag): Response
     {
         $form = $this->createForm(FormType::class, $tag, ['method' => 'DELETE']);
         $form->handleRequest($request);
@@ -157,8 +175,8 @@ class TagController extends AbstractController
         }
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $tagRepository->delete($tag);
-            $this->addFlash('warning', 'Oh no you deleted a tag');
+            $this->tagService->delete($tag);
+            $this->addFlash('warning', 'deleted_successfully');
 
             return $this->redirectToRoute('tags_index');
         }

@@ -9,7 +9,11 @@ use App\Entity\Photo;
 use App\Form\GalleryType;
 use App\Repository\GalleryRepository;
 use App\Repository\PhotoRepository;
+use App\Service\GalleryService;
+use Doctrine\ORM\OptimisticLockException;
+use Doctrine\ORM\ORMException;
 use Knp\Component\Pager\PaginatorInterface;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
 use Symfony\Component\HttpFoundation\Request;
@@ -25,11 +29,25 @@ use Symfony\Component\Routing\Annotation\Route;
 class GalleryController extends AbstractController
 {
     /**
-     * Index of gallery.
+     * Category service.
      *
-     * @param Request            $request
-     * @param GalleryRepository  $galleryRepository
-     * @param PaginatorInterface $paginator
+     * @var GalleryService
+     */
+    private $galleryService;
+
+    /**
+     * GalleryController constructor.
+     * @param GalleryService $galleryService
+     *
+     * @var GalleryService
+     */
+    public function __construct(GalleryService $galleryService)
+    {
+        $this->galleryService = $galleryService;
+    }
+
+    /**
+     * @param Request $request
      *
      * @return Response
      *
@@ -39,13 +57,10 @@ class GalleryController extends AbstractController
      *     methods={"GET"},
      * )
      */
-    public function index(Request $request, GalleryRepository $galleryRepository, PaginatorInterface $paginator): Response
+    public function index(Request $request): Response
     {
-        $pagination = $paginator->paginate(
-            $galleryRepository->queryAll(),
-            $request->query->getInt('page', 1),
-            GalleryRepository::PAGINATOR_ITEMS_PER_PAGE
-        );
+        $page = $request->query->getInt('page', 1);
+        $pagination = $this->galleryService->createPaginatedList($page);
 
         return $this->render(
             'project/gallery/index.html.twig',
@@ -78,30 +93,30 @@ class GalleryController extends AbstractController
     /**
      * Create gallery.
      *
-     * @param Request           $request
-     * @param GalleryRepository $galleryRepository
+     * @param Request $request
      *
      * @return Response
      *
-     * @throws \Doctrine\ORM\ORMException
-     * @throws \Doctrine\ORM\OptimisticLockException
+     * @throws ORMException
+     * @throws OptimisticLockException
      *
      * @Route(
      *     "/create",
      *     methods={"GET", "POST"},
      *     name="gallery_create",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function create(Request $request, GalleryRepository $galleryRepository): Response
+    public function create(Request $request): Response
     {
         $gallery = new Gallery();
         $form = $this->createForm(GalleryType::class, $gallery);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $galleryRepository->save($gallery);
-
-            $this->addFlash('success', 'Yeeeep! You have got a new gallery!');
+            $this->galleryService->save($gallery);
+            $this->addFlash('success', 'new_gallery_added');
 
             return $this->redirectToRoute('galleries_index');
         }
@@ -113,16 +128,15 @@ class GalleryController extends AbstractController
     }
 
     /**
-     * Edit gallery.
+     * Edit.
      *
-     * @param Request           $request
-     * @param Gallery           $gallery
-     * @param GalleryRepository $galleryRepository
+     * @param Request $request
+     * @param Gallery $gallery
      *
      * @return Response
      *
-     * @throws \Doctrine\ORM\ORMException
-     * @throws \Doctrine\ORM\OptimisticLockException
+     * @throws ORMException
+     * @throws OptimisticLockException
      *
      * @Route(
      *     "/{id}/edit",
@@ -130,16 +144,18 @@ class GalleryController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="gallery_edit",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function edit(Request $request, Gallery $gallery, GalleryRepository $galleryRepository): Response
+    public function edit(Request $request, Gallery $gallery): Response
     {
         $form = $this->createForm(GalleryType::class, $gallery, ['method' => 'PUT']);
         $form->handleRequest($request);
 
         if ($form->isSubmitted() && $form->isValid()) {
-            $galleryRepository->save($gallery);
+            $this->galleryService->save($gallery);
 
-            $this->addFlash('info', 'Wow you did a great edit!');
+            $this->addFlash('info', 'edit_completed');
 
             return $this->redirectToRoute('galleries_index');
         }
@@ -156,14 +172,13 @@ class GalleryController extends AbstractController
     /**
      * Delete gallery.
      *
-     * @param Request           $request
-     * @param Gallery           $gallery
-     * @param GalleryRepository $galleryRepository
+     * @param Request $request
+     * @param Gallery $gallery
      *
      * @return Response
      *
-     * @throws \Doctrine\ORM\ORMException
-     * @throws \Doctrine\ORM\OptimisticLockException
+     * @throws ORMException
+     * @throws OptimisticLockException
      *
      * @Route(
      *     "/{id}/delete",
@@ -171,8 +186,10 @@ class GalleryController extends AbstractController
      *     requirements={"id": "[1-9]\d*"},
      *     name="gallery_delete",
      * )
+     *
+     * @IsGranted("ROLE_ADMIN")
      */
-    public function delete(Request $request, Gallery $gallery, GalleryRepository $galleryRepository): Response
+    public function delete(Request $request, Gallery $gallery): Response
     {
         if ($gallery->getPhotos()->count()) {
             $this->addFlash('warning', 'message_gallery_contains_photos');
@@ -186,8 +203,8 @@ class GalleryController extends AbstractController
             $form->submit($request->request->get($form->getName()));
         }
         if ($form->isSubmitted() && $form->isValid()) {
-            $galleryRepository->delete($gallery);
-            $this->addFlash('warning', 'Oh no you deleted a gallery');
+            $this->galleryService->delete($gallery);
+            $this->addFlash('warning', 'deleted_successfully');
 
             return $this->redirectToRoute('galleries_index');
         }
